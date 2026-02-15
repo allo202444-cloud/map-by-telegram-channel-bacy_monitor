@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Карта целей</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-rotatedmarker@0.2.0/leaflet.rotatedMarker.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <style>
+        body { margin: 0; background: black; color: white; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; }
+        #map { height: 100vh; width: 100%; z-index: 1; }
+
+        /* Капсула управления */
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            display: none; 
+            align-items: center;
+            background: rgba(20, 20, 20, 0.95);
+            padding: 6px 20px;
+            border-radius: 50px;
+            border: 2px solid #ff0000; 
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+            gap: 12px;
+        }
+
+        .nav-btn {
+            background: transparent;
+            color: white;
+            border: none;
+            padding: 8px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: 0.2s;
+            border-radius: 15px;
+            white-space: nowrap;
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 0, 0, 0.2);
+            color: #ff4d4d;
+        }
+
+        .divider {
+            width: 1px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        #user-display {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+        }
+
+        .red-label { color: #ff3333; font-weight: bold; font-size: 14px; text-transform: uppercase; }
+
+        /* Стили входа */
+        #auth {
+            position: fixed;
+            inset: 0;
+            background: black;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+        }
+
+        #welcome {
+            color: red;
+            font-size: 26px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 25px;
+            line-height: 1.4;
+        }
+
+        #name {
+            padding: 12px 20px;
+            width: 280px;
+            border-radius: 30px;
+            border: 1px solid red;
+            background: #111;
+            color: white;
+            text-align: center;
+            margin-bottom: 15px;
+            outline: none;
+        }
+
+        #login-btn {
+            padding: 12px 40px;
+            border-radius: 30px;
+            background: red;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        #login-btn:hover { background: #b30000; }
+    </style>
+</head>
+<body>
+
+<div id="auth">
+    <div id="welcome">
+        ДОБРО ПОЖАЛОВАТЬ,<br>
+        ВЫ ЗАШЛИ НА КАРТУ ЦЕЛЕЙ ОТ : @monitor_bacy (tgk)<br>
+        АВТОРИЗУЙТЕСЬ
+    </div>
+    <input id="name" placeholder="Введите ваш ник">
+    <button id="login-btn" onclick="login()">Войти</button>
+</div>
+
+<div id="controls">
+    <button id="btnCreate" class="nav-btn">Создать цель</button>
+    <button id="btnCreate2" class="nav-btn">Цель №2</button>
+    <div class="red-label">Шахед</div>
+    <button id="btnDelete" class="nav-btn">Удалить</button>
+    <button id="btnClear" class="nav-btn">Очистить</button>
+    <button id="btnClearFiles" class="nav-btn">Сброс</button>
+    <button id="btnScreen" class="nav-btn" style="color: #00ff00;">Скрин</button>
+    
+    <div class="divider"></div>
+    
+    <div id="user-display">
+        <span>👤</span>
+        <span id="display-name">Гость</span>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+    let map;
+    let mode = null;
+    let tempMarker = null;
+    let targets = JSON.parse(localStorage.getItem("targets") || "[]");
+    let markers = [];
+
+    /* КАРТА */
+    map = L.map('map', { 
+        preferCanvas: false 
+    }).setView([49, 31], 6);
+
+    L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        attribution: 'Google',
+        crossOrigin: true 
+    }).addTo(map);
+
+    /* ИКОНКИ */
+    const icon1 = L.icon({ iconUrl: 'chely.png', iconSize: [40, 40], iconAnchor: [20, 20] });
+    const icon2 = L.icon({ iconUrl: 'photo_2026-02-14_17-20-17.png', iconSize: [40, 40], iconAnchor: [20, 20] });
+
+    function loadTargets() {
+        targets.forEach(t => {
+            let ic = t.type === 2 ? icon2 : icon1;
+            let m = L.marker([t.lat, t.lng], { icon: ic, rotationAngle: t.angle }).addTo(map);
+            m.on("click", () => markerClick(m));
+            markers.push(m);
+        });
+    }
+    loadTargets();
+
+    map.on("click", (e) => {
+        if (mode === "create1" || mode === "create2") {
+            let ic = mode === "create1" ? icon1 : icon2;
+            if (!tempMarker) {
+                tempMarker = L.marker(e.latlng, { icon: ic }).addTo(map);
+            } else {
+                let p1 = tempMarker.getLatLng();
+                let p2 = e.latlng;
+                let angle = Math.atan2(p2.lng - p1.lng, p2.lat - p1.lat) * 180 / Math.PI;
+                tempMarker.setRotationAngle(angle);
+                saveTarget(p1.lat, p1.lng, angle, mode === "create2" ? 2 : 1);
+                tempMarker.on("click", () => markerClick(tempMarker));
+                markers.push(tempMarker);
+                tempMarker = null;
+                mode = null;
+            }
+        }
+    });
+
+    function saveTarget(lat, lng, angle, type) {
+        targets.push({ lat, lng, angle, type });
+        localStorage.setItem("targets", JSON.stringify(targets));
+    }
+
+    function markerClick(marker) {
+        if (mode === "delete") {
+            map.removeLayer(marker);
+            markers = markers.filter(m => m !== marker);
+            let pos = marker.getLatLng();
+            targets = targets.filter(t => !(t.lat === pos.lat && t.lng === pos.lng));
+            localStorage.setItem("targets", JSON.stringify(targets));
+            return;
+        }
+        L.popup().setLatLng(marker.getLatLng()).setContent("Ударный дрон").openOn(map);
+    }
+
+    /* ЛОГИКА КНОПОК */
+    document.getElementById('btnCreate').onclick = () => mode = "create1";
+    document.getElementById('btnCreate2').onclick = () => mode = "create2";
+    document.getElementById('btnDelete').onclick = () => mode = "delete";
+    document.getElementById('btnClear').onclick = () => {
+        markers.forEach(m => map.removeLayer(m));
+        markers = []; targets = [];
+        localStorage.setItem("targets", "[]");
+    };
+    document.getElementById('btnClearFiles').onclick = () => {
+        localStorage.removeItem("targets");
+        location.reload();
+    };
+
+    /* СКРИНШОТ */
+    document.getElementById('btnScreen').onclick = () => {
+        html2canvas(document.body, {
+            useCORS: true, 
+            allowTaint: true,
+            scale: 2,
+            backgroundColor: "#000000"
+        }).then(canvas => {
+            let a = document.createElement("a");
+            a.download = "map_targets.png";
+            a.href = canvas.toDataURL("image/png");
+            a.click();
+        });
+    };
+
+    function login() {
+        const val = document.getElementById("name").value;
+        if (!val.trim()) return alert("Введите ник");
+        document.getElementById("display-name").innerText = val;
+        document.getElementById("auth").style.display = "none";
+        document.getElementById("controls").style.display = "flex";
+    }
+</script>
+</body>
+</html>
